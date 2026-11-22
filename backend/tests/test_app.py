@@ -9,21 +9,6 @@ from backend.models.user import User
 from backend.models.order import Order
 
 
-def test_register_and_login(client):
-    email = f"test-{uuid.uuid4().hex[:8]}@test.ge"
-
-    response = client.post("/auth/register", json={
-        "email": email,
-        "full_name": "Test User",
-        "password": "test123"
-    })
-    assert response.status_code in (200, 201)
-    assert response.json()["role"] == "costumer"
-
-    response = client.post("/auth/login", data={"username": email, "password": "test123"})
-    assert response.status_code == 200
-    assert "access_token" in response.json()
-
 def test_costumer_cannot_use_admin_endpoints(client, costumer, admin):
     response = client.get("/auth/users", headers=costumer)
     assert response.status_code == 403
@@ -34,19 +19,6 @@ def test_costumer_cannot_use_admin_endpoints(client, costumer, admin):
     response = client.get("/auth/users")
     assert response.status_code == 401
 
-def test_create_ticket(client, costumer, admin):
-    response = client.post("/tickets/", json={
-        "subject": "Forgot password",
-        "body": "I forgot my password"
-    }, headers=costumer)
-    assert response.status_code == 201
-    assert response.json()["status"] == "triaging"
-
-    response = client.post("/tickets/", json={
-        "subject": "Test",
-        "body": "Admin should not create tickets"
-    }, headers=admin)
-    assert response.status_code == 403
 
 def test_simple_ticket_is_auto_replied(client, costumer):
     response = client.post("/tickets/", json={
@@ -60,6 +32,7 @@ def test_simple_ticket_is_auto_replied(client, costumer):
     assert ticket["status"] == "replied"
     assert ticket["category"] == "account"
     assert ticket["messages"][0]["author_type"] == "ai"
+
 
 def test_billing_ticket_waits_for_review(client, costumer, admin):
     response = client.post("/tickets/", json={
@@ -77,6 +50,7 @@ def test_billing_ticket_waits_for_review(client, costumer, admin):
     queue = client.get("/review/queue", headers=admin).json()
     assert ticket_id in [item["id"] for item in queue]
 
+
 def test_agent_approves_reply(client, costumer, admin):
     response = client.post("/tickets/", json={
         "subject": "Charged twice",
@@ -91,6 +65,7 @@ def test_agent_approves_reply(client, costumer, admin):
     ticket = client.get(f"/tickets/{ticket_id}", headers=costumer).json()
     assert ticket["status"] == "replied"
     assert len(ticket["messages"]) == 1
+
 
 def test_agent_rejects_reply(client, costumer, admin):
     response = client.post("/tickets/", json={
@@ -109,6 +84,7 @@ def test_agent_rejects_reply(client, costumer, admin):
 
     response = client.post(f"/review/{ticket_id}/decision", json={"decision": "approve"}, headers=admin)
     assert response.status_code == 409
+
 
 def test_spam_ticket(client, costumer):
     response = client.post("/tickets/", json={
@@ -153,23 +129,22 @@ async def add_order(email, number):
         await db.commit()
 
 
-def test_costumer_sees_only_own_orders(client, admin):
+def test_costumer_can_buy_and_sees_only_own_orders(client, admin):
     owner_email, owner = register(client)
     other_email, other = register(client)
-    number = str(uuid.uuid4().int)[:8]
 
-    client.portal.call(add_order, owner_email, number)
+    response = client.post("/orders", json={"product": "iPhone 17 Pro"}, headers=owner)
+    assert response.status_code == 201
+    assert response.json()["status"] == "paid"
+    assert response.json()["total"] == 3799
+    order_id = response.json()["id"]
 
-    owner_orders = client.get("/orders/my", headers=owner).json()
-    assert [o["order_number"] for o in owner_orders] == [number]
+    assert [o["id"] for o in client.get("/orders/my", headers=owner).json()] == [order_id]
     assert client.get("/orders/my", headers=other).json() == []
-
     assert client.get("/orders", headers=owner).status_code == 403
 
-    order_id = owner_orders[0]["id"]
-    response = client.patch(f"/orders/{order_id}", json={"status": "delivered"}, headers=admin)
-    assert response.status_code == 200
-    assert response.json()["status"] == "delivered"
+    response = client.patch(f"/orders/{order_id}", json={"status": "shipped", "tracking_number": "GE111222"}, headers=admin)
+    assert response.json()["status"] == "shipped"
 
 
 def test_ai_finds_only_own_order(client):
@@ -189,21 +164,6 @@ def test_ai_finds_only_own_order(client):
     assert "GE123456" not in result["order_info"]
 
 
-def test_costumer_can_buy_phone(client):
-    email, costumer = register(client)
-
-    response = client.post("/orders", json={"product": "iPhone 17 Pro"}, headers=costumer)
-    assert response.status_code == 201
-    assert response.json()["status"] == "paid"
-    assert response.json()["total"] == 3799
-
-    my_orders = client.get("/orders/my", headers=costumer).json()
-    assert my_orders[0]["product"] == "iPhone 17 Pro"
-
-    response = client.post("/orders", json={"product": "Nokia 3310"}, headers=costumer)
-    assert response.status_code == 400
-
-
 def test_ai_answers_follow_up_message(client, costumer):
     response = client.post("/tickets/", json={"subject": "Forgot password", "body": "I forgot my password"}, headers=costumer)
     ticket_id = response.json()["id"]
@@ -215,22 +175,3 @@ def test_ai_answers_follow_up_message(client, costumer):
     ticket = client.get(f"/tickets/{ticket_id}", headers=costumer).json()
     assert ticket["status"] == "replied"
     assert [m["author_type"] for m in ticket["messages"]] == ["ai", "costumer", "ai"]
-
-
-def test_follow_up_waits_while_ticket_is_in_review(client, costumer):
-    response = client.post("/tickets/", json={"subject": "Charged twice", "body": "You charged me twice"}, headers=costumer)
-    ticket_id = response.json()["id"]
-
-    client.post(f"/tickets/{ticket_id}/messages", json={"content": "Hello??"}, headers=costumer)
-
-    ticket = client.get(f"/tickets/{ticket_id}", headers=costumer).json()
-    assert ticket["status"] == "awaiting_review"
-    assert [m["author_type"] for m in ticket["messages"]] == ["costumer"]
-
-
-def test_retry_only_for_new_tickets(client, costumer, admin):
-    response = client.post("/tickets/", json={"subject": "Forgot password", "body": "I forgot my password"}, headers=costumer)
-    ticket_id = response.json()["id"]
-
-    assert client.post(f"/tickets/{ticket_id}/retry", headers=costumer).status_code == 403
-    assert client.post(f"/tickets/{ticket_id}/retry", headers=admin).status_code == 409

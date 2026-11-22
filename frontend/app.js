@@ -485,7 +485,9 @@ async function pageTicket(id) {
         escalated: `<div class="working red">${icon("up", 18)} Escalated to a senior support specialist.</div>`
     }[ticket.status] || "";
 
-    const canRetry = ticket.status === "new" && currentUser.role !== "costumer";
+    const isStaff = currentUser.role !== "costumer";
+    const canWrite = isOwner || (isStaff && !["triaging", "awaiting_review"].includes(ticket.status));
+    const canRetry = ticket.status === "new" && isStaff;
     const retryInfo = canRetry ? `
         <div class="working red" style="justify-content: space-between; flex-wrap: wrap">
             <span style="display: flex; align-items: center; gap: 10px">${icon("alert", 18)} The AI could not process this ticket.</span>
@@ -521,10 +523,10 @@ async function pageTicket(id) {
             <h2>${icon("message", 18)} Conversation</h2>
             ${ticketThread(ticket)}
 
-            ${isOwner ? `
+            ${canWrite ? `
                 <form class="composer" id="add-message">
                     <label for="message-input" class="sr-only">Message</label>
-                    <textarea id="message-input" name="content" required placeholder="Write a message…"></textarea>
+                    <textarea id="message-input" name="content" required placeholder="${isStaff ? "Reply as support agent…" : "Write a message…"}"></textarea>
                     <button type="submit" aria-label="Send message">${icon("send", 18)}</button>
                 </form>` : ""}
         </div>

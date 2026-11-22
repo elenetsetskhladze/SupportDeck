@@ -296,7 +296,7 @@ async def draft_reply(state: TriageState):
 
     confidence = response.draft_confidence
 
-    if not state["kb_chunks"] and not state["order_info"]:
+    if not state["kb_chunks"]:
         confidence = 0.0
 
     await save_run(

@@ -173,19 +173,25 @@ async def add_message(
     if current_user.role == "costumer" and ticket.costumer_id != current_user.id:
         raise HTTPException(status_code=404)
 
-    if ticket.costumer_id != current_user.id:
-        raise HTTPException(status_code=403)
+    is_staff = current_user.role in ("agent", "admin")
+
+    if is_staff and ticket.status in ("triaging", "awaiting_review"):
+        raise HTTPException(status_code=409, detail="Wait for the AI or use the review page for this ticket")
 
     new_message = TicketMessage(
         ticket_id=ticket.id,
-        author_type="costumer",
+        author_type="agent" if is_staff else "costumer",
         author_id=current_user.id,
         content=message.content
     )
 
     db.add(new_message)
 
-    ai_can_answer = ticket.status == "replied"
+    if is_staff:
+        ticket.status = "replied"
+        ticket.assigned_agent_id = current_user.id
+
+    ai_can_answer = not is_staff and ticket.status == "replied"
     if ai_can_answer:
         ticket.status = "triaging"
 
