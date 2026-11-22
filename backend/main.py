@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 
 from backend.database import lifespan
-from backend.routers import auth, tickets, kb, analytics, review
+from backend.routers import auth, tickets, kb, analytics, review, orders
 
 
 app = FastAPI(title="SupportDesk AI", lifespan=lifespan)
@@ -15,3 +15,5 @@ app.include_router(kb.router)
 app.include_router(analytics.router)
 
 app.include_router(review.router)
+
+app.include_router(orders.router)

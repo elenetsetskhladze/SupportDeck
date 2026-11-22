@@ -1,6 +1,12 @@
 import uuid
-
 import asyncio
+
+from sqlalchemy import select
+
+import backend.agents as agents
+from backend.database import SessionLocal
+from backend.models.user import User
+from backend.models.order import Order
 
 
 def test_register_and_login(client):
@@ -130,3 +136,69 @@ def test_personal_data_is_hidden():
     assert "[email]" in result["body"]
     assert "nino@gmail.com" not in result["body"]
     assert "[phone]" in result["body"]
+
+
+def register(client):
+    email = f"test-{uuid.uuid4().hex[:8]}@test.ge"
+    client.post("/auth/register", json={"email": email, "full_name": "Test User", "password": "test123"})
+    response = client.post("/auth/login", data={"username": email, "password": "test123"})
+    return email, {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+
+async def add_order(email, number):
+    async with SessionLocal() as db:
+        user = await db.scalar(select(User).where(User.email == email))
+        db.add(Order(order_number=number, costumer_id=user.id, product="iPhone 17 Pro",
+                     total=3799, status="shipped", tracking_number="GE123456"))
+        await db.commit()
+
+
+def test_costumer_sees_only_own_orders(client, admin):
+    owner_email, owner = register(client)
+    other_email, other = register(client)
+    number = str(uuid.uuid4().int)[:8]
+
+    client.portal.call(add_order, owner_email, number)
+
+    owner_orders = client.get("/orders/my", headers=owner).json()
+    assert [o["order_number"] for o in owner_orders] == [number]
+    assert client.get("/orders/my", headers=other).json() == []
+
+    assert client.get("/orders", headers=owner).status_code == 403
+
+    order_id = owner_orders[0]["id"]
+    response = client.patch(f"/orders/{order_id}", json={"status": "delivered"}, headers=admin)
+    assert response.status_code == 200
+    assert response.json()["status"] == "delivered"
+
+
+def test_ai_finds_only_own_order(client):
+    owner_email, owner = register(client)
+    other_email, other = register(client)
+    number = str(uuid.uuid4().int)[:8]
+
+    client.portal.call(add_order, owner_email, number)
+
+    state = {"subject": "Where is my phone?", "body": f"Order #{number}", "costumer_email": owner_email}
+    result = client.portal.call(agents.find_order, state)
+    assert "GE123456" in result["order_info"]
+
+    state["costumer_email"] = other_email
+    result = client.portal.call(agents.find_order, state)
+    assert "not found" in result["order_info"]
+    assert "GE123456" not in result["order_info"]
+
+
+def test_costumer_can_buy_phone(client):
+    email, costumer = register(client)
+
+    response = client.post("/orders", json={"product": "iPhone 17 Pro"}, headers=costumer)
+    assert response.status_code == 201
+    assert response.json()["status"] == "paid"
+    assert response.json()["total"] == 3799
+
+    my_orders = client.get("/orders/my", headers=costumer).json()
+    assert my_orders[0]["product"] == "iPhone 17 Pro"
+
+    response = client.post("/orders", json={"product": "Nokia 3310"}, headers=costumer)
+    assert response.status_code == 400

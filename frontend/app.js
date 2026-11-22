@@ -55,11 +55,59 @@ const ICON_PATHS = {
     frown: '<circle cx="12" cy="12" r="9"/><path d="M16 16s-1.5-2-4-2-4 2-4 2M9 9h.01M15 9h.01"/>',
     angry: '<circle cx="12" cy="12" r="9"/><path d="M16 16s-1.5-2-4-2-4 2-4 2M8 9l2 1M16 9l-2 1"/>',
     flag: '<path d="M4 22V4M4 4h13l-2 4 2 4H4"/>',
-    send: '<path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/>'
+    send: '<path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/>',
+    box: '<path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="M3 8l9 5 9-5M12 13v8"/>',
+    phone: '<rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/>'
 };
 
 function icon(name, size = 16) {
     return `<svg class="icon" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON_PATHS[name] || ""}</svg>`;
+}
+
+const PHONE_COLORS = ["#3A3833", "#7C8F74", "#C9694A", "#3D5A73", "#C8B48E", "#E4DCCB", "#8B5A6B", "#5E6B7A"];
+
+function phoneColor(name) {
+    let sum = 0;
+    for (const letter of name) sum += letter.charCodeAt(0);
+    return PHONE_COLORS[sum % PHONE_COLORS.length];
+}
+
+function phoneArt(name, height = 110) {
+    const color = phoneColor(name);
+    const line = `stroke="#22201C" stroke-width="2"`;
+    const lens = (x, y, r = 5) => `<circle cx="${x}" cy="${y}" r="${r}" fill="#22201C"/><circle cx="${x - 1.5}" cy="${y - 1.5}" r="${r / 3}" fill="#6B6457"/>`;
+    const big = name.includes("Max") || name.includes("Ultra") || name.includes("+");
+    const top = big ? 10 : 18;
+    const tall = big ? 140 : 124;
+    let body;
+
+    if (name.includes("Fold")) {
+        body = `
+            <rect x="14" y="22" width="92" height="116" rx="10" fill="${color}" ${line}/>
+            <rect x="20" y="28" width="80" height="104" rx="6" fill="#22201C" opacity="0.88"/>
+            <line x1="60" y1="22" x2="60" y2="138" stroke="#F6F1E7" stroke-width="1.5" opacity="0.5"/>`;
+    } else if (name.includes("Flip")) {
+        body = `
+            <rect x="30" y="34" width="60" height="92" rx="14" fill="${color}" ${line}/>
+            <rect x="36" y="40" width="48" height="40" rx="8" fill="#22201C" opacity="0.88"/>
+            <line x1="30" y1="96" x2="90" y2="96" stroke="#22201C" stroke-width="1.5" opacity="0.4"/>
+            <circle cx="48" cy="60" r="5" fill="#22201C" stroke="#C9BFA9" stroke-width="1.5"/>
+            <circle cx="62" cy="60" r="5" fill="#22201C" stroke="#C9BFA9" stroke-width="1.5"/>`;
+    } else if (name.startsWith("Samsung")) {
+        const ultra = name.includes("Ultra");
+        body = `
+            <rect x="32" y="${top}" width="56" height="${tall}" rx="${ultra ? 6 : 12}" fill="${color}" ${line}/>
+            ${lens(46, top + 18)}${lens(46, top + 34)}${lens(46, top + 50)}
+            ${ultra ? lens(60, top + 26, 3.5) : ""}`;
+    } else {
+        const pro = name.includes("Pro");
+        body = `
+            <rect x="32" y="${top}" width="56" height="${tall}" rx="14" fill="${color}" ${line}/>
+            <rect x="37" y="${top + 5}" width="${pro ? 30 : 24}" height="${pro ? 30 : 26}" rx="8" fill="#22201C" opacity="0.18"/>
+            ${pro ? lens(45, top + 13) + lens(45, top + 27) + lens(59, top + 20) : lens(44, top + 12, 4.5) + lens(55, top + 23, 4.5)}`;
+    }
+
+    return `<svg width="${height * 0.75}" height="${height}" viewBox="0 0 120 160" role="img" aria-label="${escapeHtml(name)}">${body}</svg>`;
 }
 
 async function api(path, options = {}) {
@@ -204,7 +252,9 @@ function menuItems() {
 
     if (role === "costumer") {
         return [
+            ["#/shop", "phone", "Shop"],
             ["#/tickets", "ticket", "My tickets"],
+            ["#/orders", "box", "My orders"],
             ["#/new", "pen", "New ticket"]
         ];
     }
@@ -213,6 +263,7 @@ function menuItems() {
         ["#/review", "inbox", "Review queue"],
         ["#/workflow", "gauge", "Load workflow"],
         ["#/tickets", "ticket", "All tickets"],
+        ["#/orders", "box", "Orders"],
         ["#/kb", "book", "Knowledge base"]
     ];
 
@@ -343,7 +394,10 @@ async function pageTickets() {
     }
 }
 
-function pageNewTicket() {
+function pageNewTicket(orderNumber) {
+    const subject = orderNumber ? `Question about order #${orderNumber}` : "";
+    const body = orderNumber ? `Order #${orderNumber}: ` : "";
+
     renderLayout(`
         <a class="back" href="#/tickets">← Back to tickets</a>
         <div class="page-header">
@@ -356,11 +410,11 @@ function pageNewTicket() {
             <form id="new-ticket">
                 <div class="field">
                     <label>Subject</label>
-                    <input name="subject" required maxlength="255" placeholder="e.g. I can't log in">
+                    <input name="subject" required maxlength="255" placeholder="e.g. I can't log in" value="${escapeHtml(subject)}">
                 </div>
                 <div class="field">
                     <label>Message</label>
-                    <textarea name="body" required maxlength="5000" placeholder="Tell us what happened..."></textarea>
+                    <textarea name="body" required maxlength="5000" placeholder="Tell us what happened...">${escapeHtml(body)}</textarea>
                 </div>
                 <button class="btn" type="submit">${icon("send", 16)} Send ticket</button>
             </form>
@@ -615,6 +669,7 @@ const STEP_NAMES = {
     prepare_ticket: "Prepare ticket",
     categorize_ticket: "Categorize ticket",
     mark_spam: "Mark as spam",
+    find_order: "Find order",
     find_kb_article: "Find KB articles",
     draft_reply: "Draft reply",
     check_quality: "Check quality",
@@ -737,7 +792,6 @@ async function pageWorkflow(threadId) {
         location.hash = "#/workflow/" + encodeURIComponent(value);
     };
 }
-
 
 const CATEGORIES = ["billing", "technical", "account", "shipping", "general"];
 
@@ -1007,6 +1061,152 @@ async function pageAnalytics() {
     `);
 }
 
+const ORDER_STEPS = ["paid", "shipped", "delivered"];
+const ORDER_STATUSES = ["paid", "shipped", "delivered", "cancelled", "refunded"];
+const ORDER_COLORS = { paid: "blue", shipped: "orange", delivered: "green", cancelled: "red", refunded: "" };
+
+function orderBadge(status) {
+    return `<span class="badge ${ORDER_COLORS[status] ?? ""}">${escapeHtml(status)}</span>`;
+}
+
+function orderSteps(status) {
+    if (!ORDER_STEPS.includes(status)) return "";
+
+    const current = ORDER_STEPS.indexOf(status);
+
+    return `<div class="order-steps">${ORDER_STEPS.map((step, index) => `
+        <span class="order-step ${index <= current ? "done" : ""}"><span class="order-dot"></span>${step}</span>
+    `).join('<span class="step-line"></span>')}</div>`;
+}
+
+function orderCard(order) {
+    return `
+        <div class="card order-card">
+            <div class="order-top">
+                <div class="order-icon">${phoneArt(order.product, 48)}</div>
+                <div class="order-info">
+                    <div class="order-number">Order #${escapeHtml(order.order_number)}</div>
+                    <div class="order-product">${escapeHtml(order.product)}</div>
+                </div>
+                <div class="order-total">${order.total} ₾</div>
+            </div>
+            ${orderSteps(order.status)}
+            <div class="order-bottom">
+                <span class="muted">${orderBadge(order.status)} ${order.tracking_number ? "Tracking " + escapeHtml(order.tracking_number) : formatDate(order.created_at)}</span>
+                <a class="btn secondary small" href="#/new/${order.order_number}">${icon("chat", 14)} Get help</a>
+            </div>
+        </div>
+    `;
+}
+
+async function pageMyOrders() {
+    const orders = await api("/orders/my");
+
+    const content = orders.length
+        ? `<div class="orders-grid">${orders.map(orderCard).join("")}</div>`
+        : `<div class="card empty"><div class="empty-icon">${icon("box", 32)}</div>You have no orders yet.</div>`;
+
+    renderLayout(`
+        <div class="page-header">
+            <div>
+                <h1>My orders</h1>
+                <p class="subtitle">Question about an order? Click Get help and our AI will look it up.</p>
+            </div>
+        </div>
+        ${content}
+    `);
+}
+
+async function pageAllOrders() {
+    const orders = await api("/orders");
+
+    renderLayout(`
+        <div class="page-header">
+            <div>
+                <h1>Orders</h1>
+                <p class="subtitle">Update status and tracking. The AI uses this when customers ask about an order.</p>
+            </div>
+        </div>
+        <div class="card list-card">
+            <table>
+                <thead><tr><th>Order</th><th>Product</th><th>Total</th><th>Status</th><th>Tracking</th><th></th></tr></thead>
+                <tbody>
+                    ${orders.map((o) => `
+                        <tr data-order="${o.id}">
+                            <td><strong>#${escapeHtml(o.order_number)}</strong></td>
+                            <td>${escapeHtml(o.product)}</td>
+                            <td class="muted">${o.total} ₾</td>
+                            <td>
+                                <select name="status">
+                                    ${ORDER_STATUSES.map((s) => `<option ${o.status === s ? "selected" : ""}>${s}</option>`).join("")}
+                                </select>
+                            </td>
+                            <td><input name="tracking" value="${escapeHtml(o.tracking_number || "")}" placeholder="—"></td>
+                            <td><button class="btn small" type="button">Save</button></td>
+                        </tr>
+                    `).join("")}
+                </tbody>
+            </table>
+        </div>
+    `);
+
+    document.querySelectorAll("[data-order]").forEach((row) => {
+        row.querySelector("button").onclick = async () => {
+            try {
+                await api(`/orders/${row.dataset.order}`, {
+                    method: "PATCH",
+                    body: {
+                        status: row.querySelector("[name=status]").value,
+                        tracking_number: row.querySelector("[name=tracking]").value || null
+                    }
+                });
+                showToast("Order updated");
+            } catch (error) {
+                showToast(error.message, true);
+            }
+        };
+    });
+}
+
+async function pageShop() {
+    const products = await api("/orders/products");
+
+    renderLayout(`
+        <div class="page-header">
+            <div>
+                <h1>Shop</h1>
+                <p class="subtitle">Free delivery in Tbilisi. Questions after you buy? Our AI is here to help.</p>
+            </div>
+        </div>
+        <div class="products-grid">
+            ${products.map((p) => `
+                <div class="card product-card">
+                    <div class="product-image">${phoneArt(p.name, 120)}</div>
+                    <div class="product-name">${escapeHtml(p.name)}</div>
+                    <div class="product-bottom">
+                        <span class="product-price">${p.price} ₾</span>
+                        <button class="btn small" data-buy="${escapeHtml(p.name)}">${icon("box", 14)} Buy</button>
+                    </div>
+                </div>
+            `).join("")}
+        </div>
+    `);
+
+    document.querySelectorAll("[data-buy]").forEach((button) => {
+        button.onclick = async () => {
+            button.disabled = true;
+            try {
+                const order = await api("/orders", { method: "POST", body: { product: button.dataset.buy } });
+                showToast(`Order #${order.order_number} placed!`);
+                location.hash = "#/orders";
+            } catch (error) {
+                showToast(error.message, true);
+                button.disabled = false;
+            }
+        };
+    });
+}
+
 async function router() {
     clearTimeout(pollTimer);
 
@@ -1020,7 +1220,9 @@ async function router() {
     renderLoading();
 
     try {
-        if (parts[0] === "new") return pageNewTicket();
+        if (parts[0] === "new") return pageNewTicket(parts[1]);
+        if (parts[0] === "shop") return await pageShop();
+        if (parts[0] === "orders") return await (isStaff ? pageAllOrders() : pageMyOrders());
         if (parts[0] === "tickets" && parts[1]) return await pageTicket(parts[1]);
         if (parts[0] === "tickets") return await pageTickets();
         if (parts[0] === "review" && parts[1] && isStaff) return await pageReview(parts[1]);
@@ -1031,7 +1233,7 @@ async function router() {
         if (parts[0] === "users" && isAdmin) return await pageUsers();
         if (parts[0] === "analytics" && isAdmin) return await pageAnalytics();
 
-        location.hash = isStaff ? "#/review" : "#/tickets";
+        location.hash = isStaff ? "#/review" : "#/shop";
     } catch (error) {
         renderLayout(`<div class="card empty"><div class="empty-icon">${icon("alert", 32)}</div>${escapeHtml(error.message)}</div>`);
     }

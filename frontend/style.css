@@ -473,3 +473,82 @@ td select { width: auto; }
     .ticket-row .date { display: none; }
     .message { max-width: 100%; }
 }
+
+.orders-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 16px;
+}
+
+.order-card { display: flex; flex-direction: column; gap: 16px; margin-bottom: 0; }
+
+.order-top { display: flex; align-items: center; gap: 14px; }
+
+.order-icon {
+    width: 48px;
+    height: 56px;
+    border-radius: 4px;
+    background: var(--soft);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.order-info { flex: 1; min-width: 0; }
+
+.order-number {
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
+.order-product { font-family: var(--serif); font-size: 17px; font-weight: 600; }
+
+.order-total { font-family: var(--serif); font-size: 18px; white-space: nowrap; }
+
+.order-steps { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+
+.order-step { display: inline-flex; align-items: center; gap: 6px; text-transform: capitalize; }
+
+.order-step.done { color: var(--text); font-weight: 600; }
+
+.order-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--border); }
+
+.order-step.done .order-dot { background: var(--accent); }
+
+.step-line { flex: 1; height: 1px; background: var(--border); min-width: 16px; }
+
+.order-bottom {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    border-top: 1px solid var(--border);
+    padding-top: 12px;
+}
+
+.products-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 16px;
+}
+
+.product-card { display: flex; flex-direction: column; gap: 12px; margin-bottom: 0; }
+
+.product-image {
+    height: 140px;
+    border-radius: 4px;
+    background: var(--soft);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.product-name { font-family: var(--serif); font-size: 18px; font-weight: 600; }
+
+.product-bottom { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: auto; }
+
+.product-price { font-family: var(--serif); font-size: 20px; }
