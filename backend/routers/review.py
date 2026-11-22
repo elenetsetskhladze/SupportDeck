@@ -98,3 +98,48 @@ async def make_decision(
         "comment": review.comment,
         "status": ticket.status
     }
+
+
+@router.get("/workflow/{thread_id}")
+async def load_workflow(
+        thread_id: str,
+        request: Request,
+        current_user: User = Depends(require_agent)
+):
+    if not thread_id.startswith("ticket-"):
+        thread_id = f"ticket-{thread_id}"
+
+    graph = request.app.state.graph
+    config = {"configurable": {"thread_id": thread_id}}
+
+    state = await graph.aget_state(config)
+    values = state.values
+
+    if not values:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    steps = []
+    async for snapshot in graph.aget_state_history(config):
+        for node in snapshot.next:
+            if node != "__start__":
+                steps.append(node)
+    steps.reverse()
+
+    return {
+        "thread_id": thread_id,
+        "ticket_id": values.get("ticket_id"),
+        "next_step": state.next[0] if state.next else None,
+        "waiting_for_human": "human_review" in state.next,
+        "steps": steps,
+        "category": values.get("category"),
+        "priority": values.get("priority"),
+        "sentiment": values.get("sentiment"),
+        "classification_confidence": values.get("classification_confidence"),
+        "attempts": values.get("attempts", 0),
+        "quality_issues": values.get("quality_issues", []),
+        "draft_reply": values.get("draft_reply"),
+        "draft_confidence": values.get("draft_confidence"),
+        "cited_article_ids": values.get("cited_article_ids", []),
+        "review_decision": values.get("review_decision") or None,
+        "final_reply": values.get("final_reply") or None
+    }

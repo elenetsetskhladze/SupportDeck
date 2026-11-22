@@ -211,6 +211,7 @@ function menuItems() {
 
     const items = [
         ["#/review", "inbox", "Review queue"],
+        ["#/workflow", "gauge", "Load workflow"],
         ["#/tickets", "ticket", "All tickets"],
         ["#/kb", "book", "Knowledge base"]
     ];
@@ -528,7 +529,10 @@ async function pageReview(id) {
     const draftPercent = (value) => (value == null ? "—" : Math.round(value * 100) + "%");
 
     renderLayout(`
-        <a class="back" href="#/review">← Back to queue</a>
+        <div class="actions" style="justify-content: space-between; margin-bottom: 14px">
+            <a class="back" href="#/review" style="margin: 0">← Back to queue</a>
+            <a class="btn secondary small" href="#/workflow/ticket-${id}">${icon("gauge", 14)} View workflow</a>
+        </div>
         <div class="page-header">
             <div>
                 <p class="eyebrow">Ticket No. ${ticket.id} — ${formatDate(ticket.created_at)}</p>
@@ -606,6 +610,134 @@ async function pageReview(id) {
         };
     });
 }
+
+const STEP_NAMES = {
+    prepare_ticket: "Prepare ticket",
+    categorize_ticket: "Categorize ticket",
+    mark_spam: "Mark as spam",
+    find_kb_article: "Find KB articles",
+    draft_reply: "Draft reply",
+    check_quality: "Check quality",
+    decide_route: "Decide route",
+    human_review: "Human review",
+    apply_decision: "Apply decision",
+    send_reply: "Send reply",
+    escalate_to_senior: "Escalate to senior"
+};
+
+function workflowStatus(workflow) {
+    if (workflow.waiting_for_human) {
+        return `<div class="working orange">${icon("clock", 18)} Waiting for human approval</div>`;
+    }
+    if (workflow.next_step) {
+        return `<div class="working">${icon("sparkle", 18)} Running — next step: ${escapeHtml(STEP_NAMES[workflow.next_step] || workflow.next_step)}</div>`;
+    }
+    return `<div class="working" style="background: var(--green-soft); color: var(--green)">${icon("check", 18)} Workflow finished</div>`;
+}
+
+function workflowSteps(workflow) {
+    return workflow.steps.map((step, index) => {
+        const isCurrent = index === workflow.steps.length - 1 && workflow.next_step === step;
+        return `
+            <div class="step ${isCurrent ? "current" : "done"}">
+                <span class="step-dot">${icon(isCurrent ? "clock" : "check", 12)}</span>
+                <span>${escapeHtml(STEP_NAMES[step] || step)}</span>
+            </div>`;
+    }).join("");
+}
+
+async function pageWorkflow(threadId) {
+    let result = "";
+
+    if (threadId) {
+        try {
+            const workflow = await api("/review/workflow/" + encodeURIComponent(threadId));
+            const percentOf = (value) => (value == null ? "—" : Math.round(value * 100) + "%");
+
+            result = `
+                ${workflowStatus(workflow)}
+
+                <div class="grid grid-2">
+                    <div>
+                        <div class="card">
+                            <h2>${icon("ticket", 18)} Thread</h2>
+                            <p class="muted">Thread ID</p>
+                            <p style="font-family: var(--serif); font-size: 20px; margin-bottom: 12px">${escapeHtml(workflow.thread_id)}</p>
+                            <div class="detail-header" style="margin-top: 0">
+                                ${categoryBadge(workflow.category)}
+                                ${priorityBadge(workflow.priority)}
+                                ${sentimentBadge(workflow.sentiment)}
+                            </div>
+                            <div class="actions" style="margin-top: 16px">
+                                <a class="btn secondary small" href="#/tickets/${workflow.ticket_id}">${icon("message", 14)} Open ticket</a>
+                                ${workflow.waiting_for_human ? `<a class="btn small" href="#/review/${workflow.ticket_id}">${icon("pen", 14)} Review now</a>` : ""}
+                            </div>
+                        </div>
+
+                        <div class="card">
+                            <h2>${icon("gauge", 18)} AI numbers</h2>
+                            <div class="big-numbers">
+                                <div><div class="number">${percentOf(workflow.classification_confidence)}</div><div class="what">classification</div></div>
+                                <div><div class="number accent">${percentOf(workflow.draft_confidence)}</div><div class="what">draft reply</div></div>
+                                <div><div class="number">${workflow.attempts}</div><div class="what">attempts</div></div>
+                            </div>
+                            <div class="sources">
+                                Quality issues:
+                                ${workflow.quality_issues.length
+                                    ? workflow.quality_issues.map((issue) => `<span style="color: var(--red)">${icon("alert", 14)} ${escapeHtml(issue)}</span>`).join("")
+                                    : `<span style="color: var(--green)">${icon("check", 14)} none</span>`}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <h2>${icon("chart", 18)} Steps</h2>
+                        <div class="steps">${workflowSteps(workflow)}</div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h2>${icon("pen", 18)} AI draft reply</h2>
+                    <p class="text-block letter-text">${escapeHtml(workflow.draft_reply || "—")}</p>
+                </div>
+
+                <div class="card">
+                    <h2>${icon("users", 18)} Reviewer verdict</h2>
+                    <p>${workflow.review_decision
+                        ? `<span class="badge ${workflow.review_decision === "reject" ? "red" : "green"}">${escapeHtml(workflow.review_decision)}</span>`
+                        : `<span class="muted">No decision yet</span>`}</p>
+                    ${workflow.final_reply ? `<p class="text-block letter-text" style="margin-top: 12px">${escapeHtml(workflow.final_reply)}</p>` : ""}
+                </div>
+            `;
+        } catch (error) {
+            result = `<div class="card empty"><div class="empty-icon">${icon("alert", 32)}</div>${escapeHtml(error.message)}</div>`;
+        }
+    }
+
+    renderLayout(`
+        <div class="page-header">
+            <div>
+                <h1>Load workflow</h1>
+                <p class="subtitle">Enter a thread ID to see where the AI is and what it decided</p>
+            </div>
+        </div>
+
+        <form class="filters" id="workflow-form">
+            <label for="thread-id" class="sr-only">Thread ID</label>
+            <input id="thread-id" name="thread_id" required placeholder="Thread ID, e.g. ticket-25" value="${escapeHtml(threadId || "")}">
+            <button class="btn" type="submit">${icon("search", 16)} Load workflow</button>
+        </form>
+
+        ${result}
+    `);
+
+    document.getElementById("workflow-form").onsubmit = (event) => {
+        event.preventDefault();
+        const value = document.getElementById("thread-id").value.trim();
+        location.hash = "#/workflow/" + encodeURIComponent(value);
+    };
+}
+
 
 const CATEGORIES = ["billing", "technical", "account", "shipping", "general"];
 
@@ -893,6 +1025,7 @@ async function router() {
         if (parts[0] === "tickets") return await pageTickets();
         if (parts[0] === "review" && parts[1] && isStaff) return await pageReview(parts[1]);
         if (parts[0] === "review" && isStaff) return await pageReviewQueue();
+        if (parts[0] === "workflow" && isStaff) return await pageWorkflow(parts[1]);
         if (parts[0] === "kb" && parts[1] && isStaff) return await pageKBForm(parts[1]);
         if (parts[0] === "kb" && isStaff) return await pageKB();
         if (parts[0] === "users" && isAdmin) return await pageUsers();
