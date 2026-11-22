@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks, Request
 from sqlalchemy import select, func, or_
@@ -7,11 +8,14 @@ from backend.models.user import User
 from backend.models.ticket import Ticket
 from backend.models.ticket_message import TicketMessage
 from backend.schemas.ticket import TicketCreate, TicketCreatedResponse, TicketResponse, TicketDetailResponse, MessageCreate, MessageResponse
-from backend.security import get_current_user
+from backend.models.triage_run import TriageRun
+from backend.security import get_current_user, require_agent
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
 
 MAX_TICKETS_PER_HOUR = 10
+
+logger = logging.getLogger(__name__)
 
 
 async def start_ai(graph, ticket_id: int, subject: str, body: str, costumer_email: str):
@@ -21,6 +25,10 @@ async def start_ai(graph, ticket_id: int, subject: str, body: str, costumer_emai
         "tags": ["supportdesk", "triage"],
         "metadata": {"ticket_id": ticket_id}
     }
+
+    async with SessionLocal() as db:
+        db.add(TriageRun(ticket_id=ticket_id, attempts=0))
+        await db.commit()
 
     try:
         await graph.ainvoke(
@@ -33,7 +41,7 @@ async def start_ai(graph, ticket_id: int, subject: str, body: str, costumer_emai
             config
         )
     except Exception as error:
-        print(f"AI failed for ticket {ticket_id}: {error}")
+        logger.exception(f"AI failed for ticket {ticket_id}: {error}")
 
         async with SessionLocal() as db:
             ticket = await db.get(Ticket, ticket_id)
@@ -152,6 +160,8 @@ async def get_ticket(
 async def add_message(
         ticket_id: int,
         message: MessageCreate,
+        background_tasks: BackgroundTasks,
+        request: Request,
         current_user: User = Depends(get_current_user),
         db: AsyncSession = Depends(get_db)
 ):
@@ -174,7 +184,53 @@ async def add_message(
     )
 
     db.add(new_message)
+
+    ai_can_answer = ticket.status == "replied"
+    if ai_can_answer:
+        ticket.status = "triaging"
+
     await db.commit()
     await db.refresh(new_message)
 
+    if ai_can_answer:
+        background_tasks.add_task(
+            start_ai,
+            request.app.state.graph,
+            ticket.id,
+            ticket.subject,
+            message.content,
+            current_user.email
+        )
+
     return new_message
+
+
+@router.post("/{ticket_id}/retry")
+async def retry_ai(
+        ticket_id: int,
+        background_tasks: BackgroundTasks,
+        request: Request,
+        current_user: User = Depends(require_agent),
+        db: AsyncSession = Depends(get_db)
+):
+    ticket = await db.get(Ticket, ticket_id)
+
+    if not ticket:
+        raise HTTPException(status_code=404)
+    if ticket.status != "new":
+        raise HTTPException(status_code=409, detail="AI can only be restarted for tickets with status 'new'")
+
+    costumer = await db.get(User, ticket.costumer_id)
+    ticket.status = "triaging"
+    await db.commit()
+
+    background_tasks.add_task(
+        start_ai,
+        request.app.state.graph,
+        ticket.id,
+        ticket.subject,
+        ticket.body,
+        costumer.email
+    )
+
+    return {"ticket_id": ticket.id, "status": "triaging"}

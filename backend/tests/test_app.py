@@ -202,3 +202,35 @@ def test_costumer_can_buy_phone(client):
 
     response = client.post("/orders", json={"product": "Nokia 3310"}, headers=costumer)
     assert response.status_code == 400
+
+
+def test_ai_answers_follow_up_message(client, costumer):
+    response = client.post("/tickets/", json={"subject": "Forgot password", "body": "I forgot my password"}, headers=costumer)
+    ticket_id = response.json()["id"]
+    assert client.get(f"/tickets/{ticket_id}", headers=costumer).json()["status"] == "replied"
+
+    response = client.post(f"/tickets/{ticket_id}/messages", json={"content": "And how do I change my email?"}, headers=costumer)
+    assert response.status_code == 201
+
+    ticket = client.get(f"/tickets/{ticket_id}", headers=costumer).json()
+    assert ticket["status"] == "replied"
+    assert [m["author_type"] for m in ticket["messages"]] == ["ai", "costumer", "ai"]
+
+
+def test_follow_up_waits_while_ticket_is_in_review(client, costumer):
+    response = client.post("/tickets/", json={"subject": "Charged twice", "body": "You charged me twice"}, headers=costumer)
+    ticket_id = response.json()["id"]
+
+    client.post(f"/tickets/{ticket_id}/messages", json={"content": "Hello??"}, headers=costumer)
+
+    ticket = client.get(f"/tickets/{ticket_id}", headers=costumer).json()
+    assert ticket["status"] == "awaiting_review"
+    assert [m["author_type"] for m in ticket["messages"]] == ["costumer"]
+
+
+def test_retry_only_for_new_tickets(client, costumer, admin):
+    response = client.post("/tickets/", json={"subject": "Forgot password", "body": "I forgot my password"}, headers=costumer)
+    ticket_id = response.json()["id"]
+
+    assert client.post(f"/tickets/{ticket_id}/retry", headers=costumer).status_code == 403
+    assert client.post(f"/tickets/{ticket_id}/retry", headers=admin).status_code == 409

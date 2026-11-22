@@ -19,7 +19,7 @@ from backend.schemas.triage import TriageResult, DraftReply, QualityCheckResult
 from backend.models.order import Order
 from backend.models.user import User
 
-llm = ChatGoogleGenerativeAI(model="gemini-3.5-flash-lite")
+llm = ChatGoogleGenerativeAI(model="gemini-3.5-flash-lite", max_retries=3)
 
 embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001")
 
@@ -109,7 +109,10 @@ async def prepare_ticket(state: TriageState):
         "quality_issues": [],
         "draft_reply": "",
         "review_decision": "",
-        "final_reply": ""
+        "final_reply": "",
+        "edited_reply": "",
+        "reviewer_id": None,
+        "needs_human": False
     }
 
 async def categorize_ticket(state: TriageState):

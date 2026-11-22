@@ -485,6 +485,13 @@ async function pageTicket(id) {
         escalated: `<div class="working red">${icon("up", 18)} Escalated to a senior support specialist.</div>`
     }[ticket.status] || "";
 
+    const canRetry = ticket.status === "new" && currentUser.role !== "costumer";
+    const retryInfo = canRetry ? `
+        <div class="working red" style="justify-content: space-between; flex-wrap: wrap">
+            <span style="display: flex; align-items: center; gap: 10px">${icon("alert", 18)} The AI could not process this ticket.</span>
+            <button class="btn small" id="retry-ai">${icon("sparkle", 14)} Run AI again</button>
+        </div>` : "";
+
     renderLayout(`
         <a class="back" href="#/tickets">← Back to tickets</a>
         <div class="page-header">
@@ -502,6 +509,7 @@ async function pageTicket(id) {
         </div>
 
         ${statusInfo}
+        ${retryInfo}
 
         ${ticket.ai_summary && !isOwner ? `
             <div class="ai-box">
@@ -534,6 +542,21 @@ async function pageTicket(id) {
                 pageTicket(id);
             } catch (error) {
                 showToast(error.message, true);
+            }
+        };
+    }
+
+    const retryButton = document.getElementById("retry-ai");
+    if (retryButton) {
+        retryButton.onclick = async () => {
+            retryButton.disabled = true;
+            try {
+                await api(`/tickets/${id}/retry`, { method: "POST" });
+                showToast("AI restarted");
+                pageTicket(id);
+            } catch (error) {
+                showToast(error.message, true);
+                retryButton.disabled = false;
             }
         };
     }
