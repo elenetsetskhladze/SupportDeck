@@ -26,20 +26,43 @@ ORDERS = [
 
 async def main():
     async with SessionLocal() as db:
-        for data in ARTICLES:
-            existing = await db.scalar(select(KBArticle).where(KBArticle.title == data["title"]))
+        for data in USERS:
+            existing = await db.scalar(select(User).where(User.email == data["email"]))
 
             if existing:
-                print(f"Already exists: {data['title']}")
+                print(f"User already exists: {data['email']}")
                 continue
 
-            article = KBArticle(**data)
-            db.add(article)
+            user = User(
+                email=data["email"],
+                full_name=data["full_name"],
+                hashed_password=hash_password(data["password"]),
+                role="costumer"
+            )
+            db.add(user)
             await db.commit()
-            await db.refresh(article)
+            print(f"Added user: {data['email']}")
 
-            await index_article(article, db)
-            print(f"Added: {article.title}")
+        for data in ORDERS:
+            existing = await db.scalar(select(Order).where(Order.order_number == data["order_number"]))
+
+            if existing:
+                print(f"Order already exists: #{data['order_number']}")
+                continue
+
+            user = await db.scalar(select(User).where(User.email == data["email"]))
+
+            order = Order(
+                order_number=data["order_number"],
+                costumer_id=user.id,
+                product=data["product"],
+                total=PHONES[data["product"]],
+                status=data["status"],
+                tracking_number=data["tracking_number"]
+            )
+            db.add(order)
+            await db.commit()
+            print(f"Added order: #{data['order_number']} {data['product']}")
 
 
 if __name__ == "__main__":
