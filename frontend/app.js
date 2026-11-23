@@ -972,10 +972,11 @@ async function pageUsers() {
         </div>
         <div class="card list-card">
             <table>
-                <thead><tr><th>User</th><th>Email</th><th>Joined</th><th>Role</th></tr></thead>
+                <thead><tr><th>ID</th><th>User</th><th>Email</th><th>Joined</th><th>Role</th></tr></thead>
                 <tbody>
                     ${users.map((u) => `
                         <tr>
+                            <td class="muted">#${u.id}</td>
                             <td><strong>${escapeHtml(u.full_name)}</strong></td>
                             <td class="muted">${escapeHtml(u.email)}</td>
                             <td class="muted">${formatDate(u.created_at)}</td>
